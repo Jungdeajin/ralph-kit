@@ -239,7 +239,11 @@ EOF
   set +e; run_orchestrator "$iter" "$iter_out" "$prompt"; rc=$?; set -e
 
   log "[정보] 오케스트레이터 종료코드=$rc, 출력: $iter_out ($(wc -c < "$iter_out" 2>/dev/null || echo 0) bytes)"
-  last_status="$(grep -E '^RALPH_STATUS: (DONE|CONTINUE|BLOCKED)$' "$iter_out" | tail -1 || true)"
+  # 줄마다 마크다운 꾸밈(**, `, #, >, 앞뒤 공백, CR)만 걷어낸 뒤 줄 전체가 상태여야 인정한다.
+  # `**RALPH_STATUS: BLOCKED**` 는 읽고, 문장 속 언급("RALPH_STATUS: BLOCKED 가 아니다")은 여전히 무시.
+  last_status="$(sed -E 's/\r$//; s/^[[:space:]>#*_`]+//; s/[[:space:]*_`]+$//' "$iter_out" 2>/dev/null \
+    | grep -E '^RALPH_STATUS:[[:space:]]*(DONE|CONTINUE|BLOCKED)$' | tail -1 \
+    | sed -E 's/^RALPH_STATUS:[[:space:]]*/RALPH_STATUS: /' || true)"
   log "[정보] 보고 상태: ${last_status:-(없음)}"
 
   git diff "$iter_start_head" > "$RALPH_STATE/diff_iter${iter}.patch" 2>/dev/null || true
@@ -262,10 +266,15 @@ EOF
     notify "🚨 [$PN] Ralph 오케스트레이터 오류(코드 $rc, 이터 ${iter})."; break
   fi
 
+  # 진척 = 커밋. 미커밋 변경은 진척이 아니다 — 검증을 백그라운드로 던지고 턴을 끝낸 이터는
+  # 파일만 고친 채 상태 줄 없이 죽고, "트리가 더러우면 진척" 규칙에선 이 가드가 영영 안 걸렸다.
+  # 상태 줄이 없는 이터도 비정상 종료로 보고 같이 센다.
   cur_head="$(git rev-parse HEAD)"
-  if [ "$cur_head" = "$prev_head" ] && git diff --quiet HEAD 2>/dev/null; then
+  if [ "$cur_head" = "$prev_head" ] || [ -z "$last_status" ]; then
     no_progress=$((no_progress + 1))
-    log "[경고] 코드 변경/커밋 없음 (연속 ${no_progress}회)."
+    if [ -z "$last_status" ]; then log "[경고] RALPH_STATUS 없음 — 비정상 종료 의심 (연속 ${no_progress}회)."
+    elif git diff --quiet HEAD 2>/dev/null; then log "[경고] 코드 변경/커밋 없음 (연속 ${no_progress}회)."
+    else log "[경고] 미커밋 변경만 남고 커밋 없음 (연속 ${no_progress}회)."; fi
     if [ "$no_progress" -ge 2 ]; then log "[중단] 진척 없음 2회 — 무한 스핀 방지로 중단."; notify "⚠️ [$PN] Ralph 진척 없음 2회 — 중단(이터 ${iter})."; break; fi
   else no_progress=0; fi
   prev_head="$cur_head"

@@ -51,7 +51,7 @@ tail -f ralph/state/loop.log
 
 ## 안전장치
 - main/master 자동수정 금지(작업 브랜치 강제). `SYNC_MAIN=1`이면 시작 시 base에 ff-only 동기화(미커밋/미병합 있으면 생략).
-- `MAX_ITERS` 캡, 진척 없음 2회 연속 중단, 사용량 한도 시 자동 대기·재개(`MAX_WAIT` 초과 시 BLOCKED·재실행으로 이어짐).
+- `MAX_ITERS` 캡, 진척 없음 2회 연속 중단(진척 = **커밋**. 미커밋 변경만 남긴 이터·`RALPH_STATUS` 줄이 없는 이터도 진척 없음으로 셈), 사용량 한도 시 자동 대기·재개(`MAX_WAIT` 초과 시 BLOCKED·재실행으로 이어짐).
 - 서브에이전트(리뷰어/검증자)는 read-only — 코드 수정은 오케스트레이터만.
 
 ## 주의
